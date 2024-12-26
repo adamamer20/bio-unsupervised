@@ -8,6 +8,7 @@ dependencies = [
     "ipywidgets>=8.1.5",
     "jupyterlab>=4.3.4",
     "matplotlib>=3.10.0",
+    "scipy>=1.14.1",
     "torch>=2.5.1",
     "torchvision>=0.20.1",
     "tqdm>=4.67.1",
