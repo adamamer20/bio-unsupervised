@@ -159,8 +159,203 @@ class BPClassifier(Classifier):
         self._plot_errors()
 
 
+# Define the BioClassifier with Slow Implementation
+class BioClassifier(Classifier):
+    def __init__(
+        self,
+        dataset_name: Literal["MNIST"],
+        minibatch_size: int,
+        hidden_size: int,
+        slow: bool,
+        p: int,
+        delta: float,
+        R: float,
+        h_star: float,
+        tau_L: float,
+        w_inh: float,
+        k: Optional[int] = None,
+    ):
+        """Initialize the BioClassifier model.
+
+        Parameters
+        ----------
+        dataset_name : Literal["MNIST"]
+            Name of the dataset to use.
+        minibatch_size : int
+            Size of minibatches.
+            NOTE: For the slow exact implementation, this parameter is ignored and updates are processed 1 at a time.
+        hidden_size : int
+            Size of the hidden layer
+        slow : bool
+            Whether to use the slow exact implementation or the fast approximate implementation.
+        p : int
+            Dimension of the Lebesgue norm
+        delta : float
+            Anti-Hebbian learning parameter
+        R : float
+            Radius of the sphere for normalized weights
+        h_star : float
+            Threshold activity for Hebbian learning
+        tau : float
+            Time constant fr the dynamics
+        w_inh : float
+            Strength of global lateral inhibition
+        k : Optional[int]
+            Number of top active neurons to consider for the fast implementation.
+        """
+        if slow:
+            minibatch_size = 1
+        self.slow = slow
+
+        super().__init__(
+            dataset_name=dataset_name,
+            minibatch_size=minibatch_size,
+            hidden_size=hidden_size,
+        )
+
+        # Store hyperparameters
+        self.k = k
+        self.p = p
+        self.delta = delta
+        self.R = R
+        self.h_star = h_star
+        self.tau_L = tau_L
+        self.w_inh = w_inh
+
+        # Initialize W with random values from a normal distribution
+        self.unsupervised_weights = torch.randn(self.hidden_size, self.input_size)
+
+        # Initialize top supervised layer (hidden_size x output_size)
+        self.supervised_weights = nn.Linear(self.hidden_size, self.output_size)
+
+        # Define loss and optimizer for supervised phase
+        self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.unsupervised_weights @ x
+        x = self.relu(x)
+        x = self.supervised_weights(x)
+        return x
+
+    def train_and_plot_errors(
+        self, learning_rate: float, unsupervised_epochs: int, supervised_epochs: int
+    ):
+        """
+        Train the supervised top layer and plot error rates.
+        """
+        self._train_unsupervised(epochs=unsupervised_epochs)
+        self._train_supervised(learning_rate=learning_rate, epochs=supervised_epochs)
+        self._plot_errors()
+
+    def _train_unsupervised(self, epochs: int):
+        """
+        Perform the unsupervised learning phase.
+        """
+        print("Starting Unsupervised Learning Phase")
+        for epoch in range(epochs):
+            print(f"Unsupervised Epoch {epoch+1}/{epochs}")
+            for i, (data, _) in enumerate(self.train_data_loader):
+                input = data.squeeze(0)
+
+                # Solve lateral inhibition dynamics to get steady state activations
+                steady_state_h = self._steady_state_activations(input)
+
+                print(f"Activations: {steady_state_h}")
+                
+                # Update W using plasticity rule
+                self.unsupervised_weights += self._plasticity_rule(
+                    input, steady_state_h
+                )
+                
+                print(f"Updated Weights: {self.unsupervised_weights}")
+                
+                print(f"Data {i+1}/{len(self.train_data_loader)} processed.")
+
+            print("Epoch completed.\n")
+
+        print("Unsupervised Learning Phase Complete")
+
+    def _steady_state_activations(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the steady state activations h for a given input.
+        """
+        input_currents = (self.unsupervised_weights @ input).numpy()
+
+        if self.slow:
+            EPSILON = 1e-1
+
+            def relu(x: np.ndarray):
+                return np.maximum(x, 0)
+
+            def lateral_inhibition_dynamics(t: int, h: np.ndarray):
+                inhibition = self.w_inh * np.sum(relu(h)) - (self.w_inh * relu(h))
+                dhdt = (input_currents - inhibition - h) / self.tau_L
+                return dhdt
+
+            def steady_state_event(t: int, h: np.ndarray):
+                dhdt = lateral_inhibition_dynamics(t, h)
+                return np.linalg.norm(dhdt) - EPSILON  # Stop when norm < epsilon
+
+            steady_state_event.terminal = True
+            steady_state_event.direction = -1
+
+            solution = solve_ivp(
+                lateral_inhibition_dynamics,
+                t_span=(0, 10**5),
+                y0=input_currents,
+                events=steady_state_event,
+            )
+
+            if solution.success:
+                return torch.tensor(solution.y[:, -1])
+            else:
+                raise RuntimeError("Steady state not reached.")
+        else:
+            return input_currents
+
+    def _plasticity_rule(self, input: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the synaptic weights update W based on hidden activations h and input v.
+        """
+        if self.slow:
+            # Compute g(h)
+            g = torch.where(
+                h >= self.h_star,
+                torch.ones_like(h),
+                torch.where(h >= 0, -torch.tensor(self.delta), torch.zeros_like(h)),
+            )
+        else:
+            _, indices = torch.topk(input, self.k + 1)
+            g = torch.zeros_like(h)
+            g[indices] = -self.delta
+            g[indices[0]] = 1
+
+        return g.unsqueeze(1) * (
+            (self.R**self.p) * input
+            - (self.unsupervised_weights @ input).unsqueeze(1)
+            * self.unsupervised_weights
+        )
+
 
 if __name__ == "__main__":
     model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000).to(device)
     model.train_and_plot_errors(learning_rate=0.001, epochs=100)
 
+    model = BioClassifier(
+        "MNIST",
+        minibatch_size=1,
+        hidden_size=2000,
+        slow=True,
+        p=2,
+        delta=0.01,
+        R=1,
+        h_star=0.5,
+        tau_L=1,
+        w_inh=0.1,
+    )
+    model.train_and_plot_errors(
+        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
+    )
+
+    plt.figure()
+    plt.show()
