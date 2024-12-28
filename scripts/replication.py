@@ -359,8 +359,8 @@ class BioClassifier(Classifier):
         """
         Compute the synaptic weights update W based on hidden activations h and input v.
         """
+        # Compute g(h)
         if self.slow:
-            # Compute g(h)
             g = torch.where(
                 h >= self.h_star,
                 torch.ones_like(h),
@@ -372,11 +372,24 @@ class BioClassifier(Classifier):
             g[indices] = -self.delta
             g[indices[0]] = 1
 
-        return g.unsqueeze(1) * (
-            (self.R**self.p) * input
-            - (self.unsupervised_weights @ input).unsqueeze(1)
-            * self.unsupervised_weights
-        )
+        # Step 1: compute |W|^(p-2)
+        absW = self.unsupervised_weights.abs().pow(
+            self.p - 2
+        )  # shape (hidden_size, input_size)
+
+        # Step 2: p-dot product for each hidden unit
+        # For each row in unsupervised_weights, do elementwise multiply by absW row, multiply by input, sum
+        p_dot = (absW * self.unsupervised_weights * input).sum(
+            dim=1
+        )  # shape (hidden_size,)
+
+        # Step 3: form the bracket: R^p * (absW * input) - p_dot[:, None] * W
+        bracket = (self.R**self.p) * (absW * input) - p_dot.unsqueeze(
+            1
+        ) * self.unsupervised_weights
+
+        # Step 4: multiply each row by g(h) (which has shape (hidden_size,))
+        return g.unsqueeze(1) * bracket
 
 
 if __name__ == "__main__":
