@@ -321,7 +321,6 @@ class BioClassifier(Classifier):
         input_currents = (self.unsupervised_weights @ input).numpy()
 
         if self.slow:
-            EPSILON = 1e-1
 
             def relu(x: np.ndarray):
                 return np.maximum(x, 0)
@@ -331,18 +330,22 @@ class BioClassifier(Classifier):
                 dhdt = (input_currents - inhibition - h) / self.tau_L
                 return dhdt
 
-            def steady_state_event(t: int, h: np.ndarray):
+            """def steady_state_event(t: int, h: np.ndarray):
+                EPSILON = 1e-1
                 dhdt = lateral_inhibition_dynamics(t, h)
                 return np.linalg.norm(dhdt) - EPSILON  # Stop when norm < epsilon
 
             steady_state_event.terminal = True
-            steady_state_event.direction = -1
+            steady_state_event.direction = -1"""
 
             solution = solve_ivp(
                 lateral_inhibition_dynamics,
-                t_span=(0, 10**5),
+                t_span=(0, 200),
                 y0=input_currents,
-                events=steady_state_event,
+                # Increase tolerance for faster computation
+                rtol=1e-1,
+                atol=1e-3,
+                # events=steady_state_event,
             )
 
             if solution.success:
