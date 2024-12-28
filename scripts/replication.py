@@ -293,6 +293,11 @@ class BioClassifier(Classifier):
                 print(f"Activations: {steady_state_h}")
 
                 # Update W using plasticity rule
+                weight_update = self._plasticity_rule(input, steady_state_h)
+
+                # Normalize the weight update (referenced in original implementation)
+                weight_update = weight_update / weight_update.max()
+
                 self.unsupervised_weights += self.unsup_lr * self._plasticity_rule(
                     input, steady_state_h
                 )
