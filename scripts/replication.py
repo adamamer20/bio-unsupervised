@@ -184,8 +184,10 @@ class BioClassifier(Classifier):
         delta: float,
         R: float,
         h_star: float,
+        tau: float,
         tau_L: float,
         w_inh: float,
+        tau_schedule: bool = True,
         k: Optional[int] = None,
     ):
         """Initialize the BioClassifier model.
@@ -210,7 +212,9 @@ class BioClassifier(Classifier):
         h_star : float
             Threshold activity for Hebbian learning
         tau : float
-            Time constant fr the dynamics
+            Time constant for the weight update. It's 1/learning rate.
+        tau_L : float
+            Time constant for the lateral inhibition dynamics
         w_inh : float
             Strength of global lateral inhibition
         k : Optional[int]
@@ -232,8 +236,17 @@ class BioClassifier(Classifier):
         self.delta = delta
         self.R = R
         self.h_star = h_star
-        self.tau_L = tau_L
         self.w_inh = w_inh
+        self.tau_L = tau_L
+
+        # Initialize unsupervised learning rate
+        self.unsup_lr = 1 / tau
+        self.unsup_step_lr = 30
+
+        if tau_schedule:
+            self.unsup_gamma_lr = 0.1  # Define gamma for scheduler
+        else:
+            self.unsup_gamma_lr = 1
 
         # Initialize W with random values from a normal distribution
         self.unsupervised_weights = torch.randn(self.hidden_size, self.input_size)
@@ -243,10 +256,6 @@ class BioClassifier(Classifier):
 
         # Define loss and optimizer for supervised phase
         self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
-
-        self.unsup_lr = 0.01  # Initialize unsupervised learning rate
-        self.unsup_step_lr = 30  # Define step size for scheduler
-        self.unsup_gamma_lr = 0.1  # Define gamma for scheduler
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.unsupervised_weights @ x
