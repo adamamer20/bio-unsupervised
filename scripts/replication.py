@@ -231,6 +231,10 @@ class BioClassifier(Classifier):
         # Define loss and optimizer for supervised phase
         self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
 
+        self.unsup_lr = 0.01  # Initialize unsupervised learning rate
+        self.unsup_step_lr = 30  # Define step size for scheduler
+        self.unsup_gamma_lr = 0.1  # Define gamma for scheduler
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.unsupervised_weights @ x
         x = self.relu(x)
@@ -261,17 +265,21 @@ class BioClassifier(Classifier):
                 steady_state_h = self._steady_state_activations(input)
 
                 print(f"Activations: {steady_state_h}")
-                
+
                 # Update W using plasticity rule
-                self.unsupervised_weights += self._plasticity_rule(
+                self.unsupervised_weights += self.unsup_lr * self._plasticity_rule(
                     input, steady_state_h
                 )
-                
+
                 print(f"Updated Weights: {self.unsupervised_weights}")
-                
+
                 print(f"Data {i+1}/{len(self.train_data_loader)} processed.")
 
             print("Epoch completed.\n")
+            # Update the unsupervised learning rate manually
+            if (epoch + 1) % self.unsup_step_lr == 0:
+                self.unsup_lr *= self.unsup_gamma_lr
+                print(f"Unsupervised learning rate updated to {self.unsup_lr}")
 
         print("Unsupervised Learning Phase Complete")
 
