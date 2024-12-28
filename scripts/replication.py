@@ -184,10 +184,8 @@ class BioClassifier(Classifier):
         delta: float,
         R: float,
         h_star: float,
-        tau: float,
         tau_L: float,
         w_inh: float,
-        tau_schedule: bool = True,
         k: Optional[int] = None,
     ):
         """Initialize the BioClassifier model.
@@ -211,8 +209,6 @@ class BioClassifier(Classifier):
             Radius of the sphere for normalized weights
         h_star : float
             Threshold activity for Hebbian learning
-        tau : float
-            Time constant for the weight update. It's 1/learning rate.
         tau_L : float
             Time constant for the lateral inhibition dynamics
         w_inh : float
@@ -220,10 +216,6 @@ class BioClassifier(Classifier):
         k : Optional[int]
             Number of top active neurons to consider for the fast implementation.
         """
-        if slow:
-            minibatch_size = 1
-        self.slow = slow
-
         super().__init__(
             dataset_name=dataset_name,
             minibatch_size=minibatch_size,
@@ -231,6 +223,7 @@ class BioClassifier(Classifier):
         )
 
         # Store hyperparameters
+        self.slow = slow
         self.k = k
         self.p = p
         self.delta = delta
@@ -238,15 +231,6 @@ class BioClassifier(Classifier):
         self.h_star = h_star
         self.w_inh = w_inh
         self.tau_L = tau_L
-
-        # Initialize unsupervised learning rate
-        self.unsup_lr = 1 / tau
-        self.unsup_step_lr = 30
-
-        if tau_schedule:
-            self.unsup_gamma_lr = 0.1  # Define gamma for scheduler
-        else:
-            self.unsup_gamma_lr = 1
 
         # Initialize W with random values from a normal distribution
         self.unsupervised_weights = torch.randn(self.hidden_size, self.input_size)
@@ -264,13 +248,19 @@ class BioClassifier(Classifier):
         return x
 
     def train_and_plot_errors(
-        self, learning_rate: float, unsupervised_epochs: int, supervised_epochs: int
+        self,
+        unsupervised_lr: float,
+        unsupervised_epochs: int,
+        supervised_lr: float,
+        supervised_epochs: int,
     ):
         """
         Train the supervised top layer and plot error rates.
         """
-        self._train_unsupervised(epochs=unsupervised_epochs)
-        self._train_supervised(learning_rate=learning_rate, epochs=supervised_epochs)
+        self._train_unsupervised(
+            learning_rate=unsupervised_lr, epochs=unsupervised_epochs
+        )
+        self._train_supervised(learning_rate=supervised_lr, epochs=supervised_epochs)
         if self.slow:
             self._save("bio_slow")
             self._plot_errors("bio_slow")
@@ -278,11 +268,12 @@ class BioClassifier(Classifier):
             self._save("bio_fast")
             self._plot_errors("bio_fast")
 
-    def _train_unsupervised(self, epochs: int):
+    def _train_unsupervised(self, learning_rate: float, epochs: int):
         """
         Perform the unsupervised learning phase.
         """
         print("Starting Unsupervised Learning Phase")
+        learning_rate_update = learning_rate / epochs
         for epoch in range(epochs):
             print(f"Unsupervised Epoch {epoch+1}/{epochs}")
             for i, (data, _) in enumerate(self.train_data_loader):
@@ -299,19 +290,16 @@ class BioClassifier(Classifier):
                 # Normalize the weight update (referenced in original implementation)
                 weight_update = weight_update / weight_update.max()
 
-                self.unsupervised_weights += self.unsup_lr * self._plasticity_rule(
-                    input, steady_state_h
-                )
+                self.unsupervised_weights += learning_rate * weight_update
 
                 print(f"Updated Weights: {self.unsupervised_weights}")
 
                 print(f"Data {i+1}/{len(self.train_data_loader)} processed.")
 
             print("Epoch completed.\n")
-            # Update the unsupervised learning rate manually
-            if (epoch + 1) % self.unsup_step_lr == 0:
-                self.unsup_lr *= self.unsup_gamma_lr
-                print(f"Unsupervised learning rate updated to {self.unsup_lr}")
+
+            # Update the unsupervised learning rate
+            learning_rate -= learning_rate_update
 
         print("Unsupervised Learning Phase Complete")
 
@@ -394,46 +382,32 @@ class BioClassifier(Classifier):
 
 
 if __name__ == "__main__":
-    # Initialize and train BPClassifier
+    for slow in [True, False]:
+        # Train a bio-inspired classifier with slow or fast implementation
+
+        bio_model = BioClassifier(
+            "MNIST",
+            minibatch_size=100,
+            hidden_size=2000,
+            slow=slow,
+            p=3,
+            delta=0.4,
+            R=1,
+            h_star=0.5,
+            tau_L=1,
+            w_inh=0.1,
+            k=7,
+        )
+        bio_model.train_and_plot_errors(
+            unsupervised_epochs=1000,
+            unsupervised_lr=0.04,
+            supervised_lr=0.001,
+            supervised_epochs=100,
+        )
+
+    # Train a traditional neural network
     bp_model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000)
     bp_model.train_and_plot_errors(learning_rate=0.001, epochs=100)
-
-    # Initialize and train BioClassifier (slow)
-    bio_slow_model = BioClassifier(
-        "MNIST",
-        minibatch_size=1,
-        hidden_size=2000,
-        slow=True,
-        p=2,
-        delta=0.01,
-        R=1,
-        h_star=0.5,
-        tau=1 / 0.01,
-        tau_L=1,
-        w_inh=0.1,
-    )
-    bio_slow_model.train_and_plot_errors(
-        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
-    )
-
-    # Initialize and train BioClassifier (fast)
-    bio_fast_model = BioClassifier(
-        "MNIST",
-        minibatch_size=1,
-        hidden_size=2000,
-        slow=False,
-        p=2,
-        delta=0.01,
-        R=1,
-        h_star=0.5,
-        tau=1 / 0.01,
-        tau_L=1,
-        w_inh=0.1,
-        k=50,  # Example value for k
-    )
-    bio_fast_model.train_and_plot_errors(
-        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
-    )
 
     os.makedirs("plots", exist_ok=True)
 
