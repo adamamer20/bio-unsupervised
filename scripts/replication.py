@@ -277,7 +277,7 @@ class BioClassifier(Classifier):
         for epoch in range(epochs):
             print(f"Unsupervised Epoch {epoch+1}/{epochs}")
             for i, (data, _) in enumerate(self.train_data_loader):
-                input = data.squeeze(0)
+                input_currents = self._compute_input_currents(input)
 
                 # Solve lateral inhibition dynamics to get steady state activations
                 steady_state_h = self._steady_state_activations(input)
@@ -303,7 +303,22 @@ class BioClassifier(Classifier):
 
         print("Unsupervised Learning Phase Complete")
 
-    def _steady_state_activations(self, input: torch.Tensor) -> torch.Tensor:
+    def _compute_input_currents(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        unsupervised_weights: (hidden_size, input_dim)
+        input: (batch_size, input_dim)
+        returns: (hidden_size, batch_size) or (batch_size, hidden_size)
+        """
+        # 1) compute elementwise w_abs^(p-2)
+        w_abs_pow = self.unsupervised_weights.abs().pow(self.p - 2)
+        # 2) multiply by W elementwise
+        effective_w = w_abs_pow * self.unsupervised_weights
+        # 3) matrix multiply with input^T
+        #    yields shape (hidden_size, batch_size)
+        currents = effective_w @ input.T
+        return currents
+
+    def _steady_state_activations(self, input_currents: torch.Tensor) -> torch.Tensor:
         """
         Compute the steady state activations h for a given input.
         """
