@@ -276,25 +276,25 @@ class BioClassifier(Classifier):
         learning_rate_update = learning_rate / epochs
         for epoch in range(epochs):
             print(f"Unsupervised Epoch {epoch+1}/{epochs}")
-            for i, (data, _) in enumerate(self.train_data_loader):
+            for i, (input, _) in enumerate(self.train_data_loader):
                 input_currents = self._compute_input_currents(input)
 
                 # Solve lateral inhibition dynamics to get steady state activations
-                steady_state_h = self._steady_state_activations(input)
-
-                print(f"Activations: {steady_state_h}")
+                steady_state_h = self._steady_state_activations(input_currents)
 
                 # Update W using plasticity rule
-                weight_update = self._plasticity_rule(input, steady_state_h)
+                batch_updates = self._plasticity_rule(
+                    input, input_currents, steady_state_h
+                )
+
+                weight_update = batch_updates.mean(dim=0)
 
                 # Normalize the weight update (referenced in original implementation)
-                weight_update = weight_update / weight_update.max()
+                weight_update /= weight_update.max()
 
                 self.unsupervised_weights += learning_rate * weight_update
 
-                print(f"Updated Weights: {self.unsupervised_weights}")
-
-                print(f"Data {i+1}/{len(self.train_data_loader)} processed.")
+            print(f"Updated Weights: {self.unsupervised_weights}")
 
             print("Epoch completed.\n")
 
@@ -322,44 +322,36 @@ class BioClassifier(Classifier):
         """
         Compute the steady state activations h for a given input.
         """
-        input_currents = (self.unsupervised_weights @ input).numpy()
 
         if self.slow:
 
-            def relu(x: np.ndarray):
-                return np.maximum(x, 0)
+            def scipy_steady_state(curr_input):
+                def lateral_inhibition_dynamics(t, h):
+                    relu_h = np.maximum(h, 0)
+                    inhibition = self.w_inh * np.sum(relu_h) - self.w_inh * relu_h
+                    return (curr_input - inhibition - h) / self.tau_L
 
-            def lateral_inhibition_dynamics(t: int, h: np.ndarray):
-                inhibition = self.w_inh * np.sum(relu(h)) - (self.w_inh * relu(h))
-                dhdt = (input_currents - inhibition - h) / self.tau_L
-                return dhdt
+                solution = solve_ivp(
+                    lateral_inhibition_dynamics,
+                    t_span=(0, 200),
+                    y0=curr_input,
+                    method="RK23",
+                    t_eval=[0, 100, 200],
+                )
+                return solution.y[:, -1]
 
-            """def steady_state_event(t: int, h: np.ndarray):
-                EPSILON = 1e-1
-                dhdt = lateral_inhibition_dynamics(t, h)
-                return np.linalg.norm(dhdt) - EPSILON  # Stop when norm < epsilon
+            solutions = []
 
-            steady_state_event.terminal = True
-            steady_state_event.direction = -1"""
-
-            solution = solve_ivp(
-                lateral_inhibition_dynamics,
-                t_span=(0, 200),
-                y0=input_currents,
-                # Increase tolerance for faster computation
-                rtol=1e-1,
-                atol=1e-3,
-                # events=steady_state_event,
-            )
-
-            if solution.success:
-                return torch.tensor(solution.y[:, -1])
-            else:
-                raise RuntimeError("Steady state not reached.")
+            for i in range(input_currents.shape[1]):
+                # SciPy solution on the same column i
+                solutions.append(scipy_steady_state(input_currents[:, i].numpy()))
+            return torch.tensor(np.array(solutions))
         else:
             return input_currents
 
-    def _plasticity_rule(self, input: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    def _plasticity_rule(
+        self, input: torch.Tensor, input_currents: torch.Tensor, h: torch.Tensor
+    ) -> torch.Tensor:
         """
         Compute the synaptic weights update W based on hidden activations h and input v.
         """
@@ -371,29 +363,26 @@ class BioClassifier(Classifier):
                 torch.where(h >= 0, -torch.tensor(self.delta), torch.zeros_like(h)),
             )
         else:
-            _, indices = torch.topk(input, self.k + 1)
+            _, indices = torch.topk(h, self.k + 1)
             g = torch.zeros_like(h)
             g[indices] = -self.delta
             g[indices[0]] = 1
 
-        # Step 1: compute |W|^(p-2)
-        absW = self.unsupervised_weights.abs().pow(
-            self.p - 2
-        )  # shape (hidden_size, input_size)
-
-        # Step 2: p-dot product for each hidden unit
-        # For each row in unsupervised_weights, do elementwise multiply by absW row, multiply by input, sum
-        p_dot = (absW * self.unsupervised_weights * input).sum(
-            dim=1
-        )  # shape (hidden_size,)
-
         # Step 3: form the bracket: R^p * (absW * input) - p_dot[:, None] * W
-        bracket = (self.R**self.p) * (absW * input) - p_dot.unsqueeze(
-            1
-        ) * self.unsupervised_weights
+        # bracket => [H, B, D] = [2000, 100, 784]
+        # input_currents.shape => [H, B] -> unsqueeze(2) => [H, B, 1]
+        # unsupervised_weights.shape => [H, D] -> unsqueeze(1) => [H, 1, D]
+        bracket = (self.R**self.p) * (input) - input_currents.unsqueeze(
+            2
+        ) * self.unsupervised_weights.unsqueeze(1)
 
-        # Step 4: multiply each row by g(h) (which has shape (hidden_size,))
-        return g.unsqueeze(1) * bracket
+        # g.shape => [B, H]
+        # to broadcast over the last dimension D, unsqueeze dim=2 => [H, B, 1]
+        weight_update = bracket * g.T.unsqueeze(2)
+
+        # Average over the batch dimension
+        weight_update = weight_update.mean(dim=1)
+        return weight_update
 
 
 if __name__ == "__main__":
