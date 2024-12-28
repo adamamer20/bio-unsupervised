@@ -86,9 +86,9 @@ class Classifier(nn.Module):
         else:
             raise ValueError("Unsupported dataset")
 
-    def _plot_errors(self):
-        plt.plot(self.train_errors, label=f"{self.__class__} Train Error")
-        plt.plot(self.test_errors, label=f"{self.__class__} Test Error")
+    def _plot_errors(self, classifier_name: str):
+        plt.plot(self.train_errors, label=f"{classifier_name} Train Error")
+        plt.plot(self.test_errors, label=f"{classifier_name} Test Error")
         plt.xlabel("Epochs")
         plt.ylabel("Error Rate (%)")
         plt.legend()
@@ -171,7 +171,6 @@ class BPClassifier(Classifier):
     def train_and_plot_errors(self, learning_rate: float, epochs: int):
         self._train_supervised(learning_rate=learning_rate, epochs=epochs)
         self._save("BP")
-        self._plot_errors()
 
 
 # Define the BioClassifier with Slow Implementation
@@ -275,9 +274,10 @@ class BioClassifier(Classifier):
         self._train_supervised(learning_rate=learning_rate, epochs=supervised_epochs)
         if self.slow:
             self._save("bio_slow")
+            self._plot_errors("bio_slow")
         else:
             self._save("bio_fast")
-        self._plot_errors()
+            self._plot_errors("bio_fast")
 
     def _train_unsupervised(self, epochs: int):
         """
@@ -395,10 +395,7 @@ class BioClassifier(Classifier):
 
 
 if __name__ == "__main__":
-    model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000).to(device)
-    model.train_and_plot_errors(learning_rate=0.001, epochs=100)
-
-    model = BioClassifier(
+    bio_model = BioClassifier(
         "MNIST",
         minibatch_size=1,
         hidden_size=2000,
@@ -407,12 +404,57 @@ if __name__ == "__main__":
         delta=0.01,
         R=1,
         h_star=0.5,
+        tau=1 / 0.01,
         tau_L=1,
         w_inh=0.1,
     )
-    model.train_and_plot_errors(
+    bio_model.train_and_plot_errors(
         learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
     )
 
-    plt.figure()
-    plt.show()
+    # Initialize and train BPClassifier
+    bp_model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000)
+    bp_model.train_and_plot_errors(learning_rate=0.001, epochs=100)
+
+    # Initialize and train BioClassifier (slow)
+    bio_slow_model = BioClassifier(
+        "MNIST",
+        minibatch_size=1,
+        hidden_size=2000,
+        slow=True,
+        p=2,
+        delta=0.01,
+        R=1,
+        h_star=0.5,
+        tau=1 / 0.01,
+        tau_L=1,
+        w_inh=0.1,
+    )
+    bio_slow_model.train_and_plot_errors(
+        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
+    )
+
+    # Initialize and train BioClassifier (fast)
+    bio_fast_model = BioClassifier(
+        "MNIST",
+        minibatch_size=1,
+        hidden_size=2000,
+        slow=False,
+        p=2,
+        delta=0.01,
+        R=1,
+        h_star=0.5,
+        tau=1 / 0.01,
+        tau_L=1,
+        w_inh=0.1,
+        k=50,  # Example value for k
+    )
+    bio_fast_model.train_and_plot_errors(
+        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
+    )
+
+    os.makedirs("plots", exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_path = os.path.join("plots", f"errors_{timestamp}.png")
+    plt.savefig(save_path)
