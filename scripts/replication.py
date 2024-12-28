@@ -64,7 +64,6 @@ class Classifier(nn.Module):
                 [
                     transforms.ToTensor(),
                     transforms.Lambda(lambda x: x.view(-1)),
-                    transforms.Lambda(lambda x: x / 255),
                 ]
             )
 
