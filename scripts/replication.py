@@ -395,23 +395,6 @@ class BioClassifier(Classifier):
 
 
 if __name__ == "__main__":
-    bio_model = BioClassifier(
-        "MNIST",
-        minibatch_size=1,
-        hidden_size=2000,
-        slow=True,
-        p=2,
-        delta=0.01,
-        R=1,
-        h_star=0.5,
-        tau=1 / 0.01,
-        tau_L=1,
-        w_inh=0.1,
-    )
-    bio_model.train_and_plot_errors(
-        learning_rate=0.001, unsupervised_epochs=100, supervised_epochs=100
-    )
-
     # Initialize and train BPClassifier
     bp_model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000)
     bp_model.train_and_plot_errors(learning_rate=0.001, epochs=100)
