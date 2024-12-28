@@ -59,7 +59,11 @@ class Classifier(nn.Module):
     ) -> tuple[DataLoader, DataLoader]:
         if name == "MNIST":
             transform = transforms.Compose(
-                [transforms.ToTensor(), transforms.Lambda(lambda x: x.view(-1))]
+                [
+                    transforms.ToTensor(),
+                    transforms.Lambda(lambda x: x.view(-1)),
+                    transforms.Lambda(lambda x: x / 255),
+                ]
             )
 
             train_dataset = datasets.MNIST(
