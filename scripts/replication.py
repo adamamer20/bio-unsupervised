@@ -133,6 +133,14 @@ class Classifier(nn.Module):
             self.test_errors.append(test_error)
         print("Supervised Learning Phase Complete")
 
+    def _save(self, classifier_name: str):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = os.path.join("data", "weights", classifier_name.lower(), timestamp)
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(
+            self.state_dict(), os.path.join(save_dir, f"{classifier_name.lower()}.pth")
+        )
+
 
 # Define a traditional single-layer neural network
 class BPClassifier(Classifier):
@@ -160,6 +168,7 @@ class BPClassifier(Classifier):
 
     def train_and_plot_errors(self, learning_rate: float, epochs: int):
         self._train_supervised(learning_rate=learning_rate, epochs=epochs)
+        self._save("BP")
         self._plot_errors()
 
 
@@ -253,6 +262,10 @@ class BioClassifier(Classifier):
         """
         self._train_unsupervised(epochs=unsupervised_epochs)
         self._train_supervised(learning_rate=learning_rate, epochs=supervised_epochs)
+        if self.slow:
+            self._save("bio_slow")
+        else:
+            self._save("bio_fast")
         self._plot_errors()
 
     def _train_unsupervised(self, epochs: int):
