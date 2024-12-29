@@ -361,7 +361,7 @@ class BioClassifier(Classifier):
                 h >= self.h_star,
                 torch.ones_like(h),
                 torch.where(h >= 0, -torch.tensor(self.delta), torch.zeros_like(h)),
-            )
+            ).T
         else:
             _, indices = torch.topk(h, self.k + 1)
             g = torch.zeros_like(h)
@@ -378,7 +378,7 @@ class BioClassifier(Classifier):
 
         # g.shape => [B, H]
         # to broadcast over the last dimension D, unsqueeze dim=2 => [H, B, 1]
-        weight_update = bracket * g.T.unsqueeze(2)
+        weight_update = bracket * g.unsqueeze(2)
 
         # Average over the batch dimension
         weight_update = weight_update.mean(dim=1)
@@ -386,7 +386,7 @@ class BioClassifier(Classifier):
 
 
 if __name__ == "__main__":
-    for slow in [True, False]:
+    for slow in [False, True]:
         # Train a bio-inspired classifier with slow or fast implementation
 
         bio_model = BioClassifier(
