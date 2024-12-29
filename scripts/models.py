@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 from typing import Literal, Optional
 
 import matplotlib.pyplot as plt
@@ -49,6 +48,8 @@ class Classifier(nn.Module):
         self.test_errors = []
         self.criterion = nn.CrossEntropyLoss()
 
+        self.classifier_name = self.__class__.__name__
+
         self.to(device)
 
     def load(self, path: str):
@@ -73,7 +74,7 @@ class Classifier(nn.Module):
             )
 
             train_dataset = datasets.MNIST(
-                root="./data", download=True, train=True, transform=transform
+                root="../data", download=True, train=True, transform=transform
             )
 
             train_dataloader = DataLoader(
@@ -84,7 +85,7 @@ class Classifier(nn.Module):
             )
             test_dataloader = DataLoader(
                 datasets.MNIST(
-                    root="data",
+                    root="../data",
                     download=True,
                     train=False,
                     transform=transform,
@@ -97,7 +98,9 @@ class Classifier(nn.Module):
         else:
             raise ValueError("Unsupported dataset")
 
-    def _plot_errors(self, classifier_name: str):
+    def plot_errors(self, classifier_name: str):
+        if not self.train_errors or not self.test_errors:
+            raise ValueError("No errors to plot. Run training first.")
         plt.plot(self.train_errors, label=f"{classifier_name} Train Error")
         plt.plot(self.test_errors, label=f"{classifier_name} Test Error")
         plt.xlabel("Epochs")
@@ -135,9 +138,8 @@ class Classifier(nn.Module):
         self,
         learning_rate: float,
         epochs: int,
-        classifier_name: str,
     ):
-        print(f"Starting Supervised Learning Phase for {classifier_name}")
+        print(f"Starting Supervised Learning Phase for {self.classifier_name}")
         self.optimizer = Adam(self.parameters(), lr=learning_rate)
         for epoch in tqdm(range(epochs), desc="Supervised Learning Epochs:"):
             train_error = self._run_supervised_epoch(training=True)
@@ -147,26 +149,19 @@ class Classifier(nn.Module):
 
             # Save the model every 50 epochs
             if (epoch + 1) % 50 == 0:
-                self._save(
-                    classifier_name=classifier_name,
-                    training_phase="supervised",
-                    epoch=epoch,
-                )
+                self._save(epoch=epoch)
 
         print("Supervised Learning Phase Complete")
 
-    def _save(self, classifier_name: str, training_phase: str, epoch: int = None):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    def _save(self, epoch: int = None):
         save_dir = os.path.join(
-            ".",
-            "data",
+            "../",
             "models",
-            classifier_name.lower(),
-            training_phase,
-            f"epoch_{epoch+1}",
+            self.classifier_name.lower(),
+            "supervised",
         )
         os.makedirs(save_dir, exist_ok=True)
-        torch.save(self.state_dict(), os.path.join(save_dir, f"{timestamp}.pth"))
+        torch.save(self.state_dict(), os.path.join(save_dir, f"epoch_{epoch+1}.pth"))
         print(f"Model saved to {save_dir}")
 
 
@@ -198,7 +193,7 @@ class BPClassifier(Classifier):
         self, learning_rate: float, epochs: int, classifier_name: str
     ):
         self._train_supervised(
-            learning_rate=learning_rate, epochs=epochs, classifier_name=classifier_name
+            learning_rate=learning_rate, epochs=epochs
         )
 
 
@@ -271,6 +266,8 @@ class BioClassifier(Classifier):
         # Define loss and optimizer for supervised phase
         self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
 
+        self.classifier_name = f"{self.__class__.__name__}_{'slow' if self.slow else 'fast'}"
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # (batch_size, input_dim) @ (hidden_size, input_dim).T -> (batch_size, hidden_size)
         x = x @ self.unsupervised_weights.T
@@ -285,7 +282,6 @@ class BioClassifier(Classifier):
         unsupervised_epochs: int,
         supervised_lr: float,
         supervised_epochs: int,
-        classifier_name: str,
     ):
         """
         Train the supervised top layer and plot error rates.
@@ -293,20 +289,18 @@ class BioClassifier(Classifier):
         self._train_unsupervised(
             learning_rate=unsupervised_lr,
             epochs=unsupervised_epochs,
-            classifier_name=classifier_name,
         )
         self._train_supervised(
             learning_rate=supervised_lr,
             epochs=supervised_epochs,
-            classifier_name=classifier_name,
         )
         if self.slow:
-            self._plot_errors("bio_slow")
+            self.plot_errors("bio_slow")
         else:
-            self._plot_errors("bio_fast")
+            self.plot_errors("bio_fast")
 
     def _train_unsupervised(
-        self, learning_rate: float, epochs: int, classifier_name: str
+        self, learning_rate: float, epochs: int
     ):
         """
         Perform the unsupervised learning phase.
@@ -338,8 +332,6 @@ class BioClassifier(Classifier):
             # Save the model every 50 epochs
             if (epoch + 1) % 50 == 0:
                 self._save(
-                    classifier_name=classifier_name,
-                    training_phase="unsupervised",
                     epoch=epoch,
                 )
 
@@ -389,7 +381,9 @@ class BioClassifier(Classifier):
 
             for i in range(input_currents.shape[1]):
                 # SciPy solution on the same column i
-                solutions.append(scipy_steady_state(input_currents[:, i].numpy()))
+                solutions.append(
+                    scipy_steady_state(input_currents[:, i].to("cpu").numpy())
+                )
             return torch.tensor(np.array(solutions), device=device)
         else:
             return input_currents
