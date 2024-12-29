@@ -123,6 +123,7 @@ class Classifier(nn.Module):
         self,
         learning_rate: float,
         epochs: int,
+        classifier_name: str,
     ):
         print("Starting Supervised Learning Phase")
         self.optimizer = Adam(self.parameters(), lr=learning_rate)
@@ -132,6 +133,11 @@ class Classifier(nn.Module):
             self.train_errors.append(train_error)
             test_error = self._run_supervised_epoch(training=False)
             self.test_errors.append(test_error)
+
+            # Save the model every 50 epochs
+            if (epoch + 1) % 50 == 0:
+                self._save(f"{classifier_name}_supervised_epoch_{epoch+1}")
+
         print("Supervised Learning Phase Complete")
 
     def _save(self, classifier_name: str):
@@ -167,8 +173,12 @@ class BPClassifier(Classifier):
         x = self.softmax(x)
         return x
 
-    def train_and_plot_errors(self, learning_rate: float, epochs: int):
-        self._train_supervised(learning_rate=learning_rate, epochs=epochs)
+    def train_and_plot_errors(
+        self, learning_rate: float, epochs: int, classifier_name: str
+    ):
+        self._train_supervised(
+            learning_rate=learning_rate, epochs=epochs, classifier_name=classifier_name
+        )
         self._save("BP")
 
 
@@ -253,6 +263,7 @@ class BioClassifier(Classifier):
         unsupervised_epochs: int,
         supervised_lr: float,
         supervised_epochs: int,
+        classifier_name: str,
     ):
         """
         Train the supervised top layer and plot error rates.
@@ -268,7 +279,9 @@ class BioClassifier(Classifier):
             self._save("bio_fast")
             self._plot_errors("bio_fast")
 
-    def _train_unsupervised(self, learning_rate: float, epochs: int):
+    def _train_unsupervised(
+        self, learning_rate: float, epochs: int, classifier_name: str
+    ):
         """
         Perform the unsupervised learning phase.
         """
@@ -295,8 +308,11 @@ class BioClassifier(Classifier):
                 self.unsupervised_weights += learning_rate * weight_update
 
             print(f"Updated Weights: {self.unsupervised_weights}")
-
             print("Epoch completed.\n")
+
+            # Save the model every 50 epochs
+            if (epoch + 1) % 50 == 0:
+                self._save(f"{classifier_name}_unsupervised_epoch_{epoch+1}")
 
             # Update the unsupervised learning rate
             learning_rate -= learning_rate_update
@@ -407,11 +423,14 @@ if __name__ == "__main__":
             unsupervised_lr=0.04,
             supervised_lr=0.001,
             supervised_epochs=100,
+            classifier_name="bio_slow" if slow else "bio_fast",
         )
 
     # Train a traditional neural network
     bp_model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000)
-    bp_model.train_and_plot_errors(learning_rate=0.001, epochs=100)
+    bp_model.train_and_plot_errors(
+        learning_rate=0.001, epochs=100, classifier_name="BP"
+    )
 
     os.makedirs("plots", exist_ok=True)
 
