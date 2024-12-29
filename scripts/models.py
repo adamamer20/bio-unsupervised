@@ -1,6 +1,7 @@
 import os
 from typing import Literal, Optional
 
+import pickle  # Changed from cPickle
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -52,9 +53,11 @@ class Classifier(nn.Module):
 
         self.to(device)
 
-    def load(self, path: str):
-        """Load the model weights from the specified path."""
-        self.load_state_dict(torch.load(path))
+    @classmethod
+    def load(cls, path: str):
+        """Load the model from the specified path using pickle."""
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     def forward(x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -163,7 +166,8 @@ class Classifier(nn.Module):
             "supervised",
         )
         os.makedirs(save_dir, exist_ok=True)
-        torch.save(self.state_dict(), os.path.join(save_dir, f"epoch_{epoch+1}.pth"))
+        with open(os.path.join(save_dir, f"epoch_{epoch+1}.pkl"), "wb") as f:
+            pickle.dump(self, f)
         print(f"Model saved to {save_dir}")
 
 
