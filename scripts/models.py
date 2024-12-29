@@ -51,6 +51,10 @@ class Classifier(nn.Module):
 
         self.to(device)
 
+    def load(self, path: str):
+        """Load the model weights from the specified path."""
+        self.load_state_dict(torch.load(path))
+
     def forward(x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
@@ -135,7 +139,7 @@ class Classifier(nn.Module):
     ):
         print(f"Starting Supervised Learning Phase for {classifier_name}")
         self.optimizer = Adam(self.parameters(), lr=learning_rate)
-        for epoch in tqdm(range(epochs), desc="Supervised Epoch:"):
+        for epoch in tqdm(range(epochs), desc="Supervised Learning Epochs:"):
             train_error = self._run_supervised_epoch(training=True)
             self.train_errors.append(train_error)
             test_error = self._run_supervised_epoch(training=False)
@@ -143,22 +147,27 @@ class Classifier(nn.Module):
 
             # Save the model every 50 epochs
             if (epoch + 1) % 50 == 0:
-                self._save(f"{classifier_name}_supervised_epoch_{epoch+1}")
+                self._save(
+                    classifier_name=classifier_name,
+                    training_phase="supervised",
+                    epoch=epoch,
+                )
 
         print("Supervised Learning Phase Complete")
 
-    def _save(self, classifier_name: str, epoch: int = None):
+    def _save(self, classifier_name: str, training_phase: str, epoch: int = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_dir = os.path.join(
-            ".", "data", "models", classifier_name.lower(), f"epoch_{epoch+1}"
+            ".",
+            "data",
+            "models",
+            classifier_name.lower(),
+            training_phase,
+            f"epoch_{epoch+1}",
         )
         os.makedirs(save_dir, exist_ok=True)
         torch.save(self.state_dict(), os.path.join(save_dir, f"{timestamp}.pth"))
         print(f"Model saved to {save_dir}")
-
-    def load(self, path: str):
-        """Load the model weights from the specified path."""
-        self.load_state_dict(torch.load(path))
 
 
 # Define a traditional single-layer neural network
@@ -292,10 +301,8 @@ class BioClassifier(Classifier):
             classifier_name=classifier_name,
         )
         if self.slow:
-            self._save("bio_slow")
             self._plot_errors("bio_slow")
         else:
-            self._save("bio_fast")
             self._plot_errors("bio_fast")
 
     def _train_unsupervised(
@@ -308,8 +315,8 @@ class BioClassifier(Classifier):
             f"Starting Unsupervised Learning Phase for BioClassifier {"slow" if self.slow else "fast"}"
         )
         learning_rate_update = learning_rate / epochs
-        for epoch in tqdm(range(epochs), desc="Unsupervised Epoch:"):
-            for i, (input, _) in tqdm(enumerate(self.train_data_loader), desc="Batch:"):
+        for epoch in tqdm(range(epochs), desc="Unsupervised Learning Epochs:"):
+            for i, (input, _) in enumerate(self.train_data_loader):
                 input = input.to(device)  # ensure data is on the same device
                 input_currents = self._compute_input_currents(input)
 
@@ -330,7 +337,11 @@ class BioClassifier(Classifier):
 
             # Save the model every 50 epochs
             if (epoch + 1) % 50 == 0:
-                self._save(f"{classifier_name}_unsupervised_epoch_{epoch+1}")
+                self._save(
+                    classifier_name=classifier_name,
+                    training_phase="unsupervised",
+                    epoch=epoch,
+                )
 
             # Update the unsupervised learning rate
             learning_rate -= learning_rate_update
