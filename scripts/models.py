@@ -156,6 +156,9 @@ class Classifier(nn.Module):
         )
         print(f"Model saved to {save_dir}")
 
+    def load(self, path: str):
+        """Load the model weights from the specified path."""
+        self.load_state_dict(torch.load(path))
 
 # Define a traditional single-layer neural network
 class BPClassifier(Classifier):
