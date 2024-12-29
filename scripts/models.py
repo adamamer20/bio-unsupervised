@@ -9,7 +9,7 @@ from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
@@ -110,6 +110,7 @@ class Classifier(nn.Module):
     def _run_supervised_epoch(
         self,
         training: bool,
+        epoch: int,
     ) -> float:
         if training:
             self.train()
@@ -118,7 +119,7 @@ class Classifier(nn.Module):
         correct = 0
         total = 0
         data_loader = self.train_data_loader if training else self.test_data_loader
-        for data, target in tqdm(data_loader, desc="Batch:"):
+        for data, target in data_loader:
             data, target = data.to(device), target.to(device)
             if training and self.optimizer is not None:
                 self.optimizer.zero_grad()
@@ -131,7 +132,7 @@ class Classifier(nn.Module):
             total += target.size(0)
             correct += (predicted == target).sum().item()
         error_rate = 100 * (1 - correct / total)
-        print(f"{'Train' if training else 'Test'} Error: {error_rate}%")
+        print(f"Epoch {epoch} {'Train' if training else 'Test'} Error: {error_rate}%")
         return error_rate
 
     def _train_supervised(
@@ -142,9 +143,9 @@ class Classifier(nn.Module):
         print(f"Starting Supervised Learning Phase for {self.classifier_name}")
         self.optimizer = Adam(self.parameters(), lr=learning_rate)
         for epoch in tqdm(range(epochs), desc="Supervised Learning Epochs:"):
-            train_error = self._run_supervised_epoch(training=True)
+            train_error = self._run_supervised_epoch(training=True, epoch=epoch)
             self.train_errors.append(train_error)
-            test_error = self._run_supervised_epoch(training=False)
+            test_error = self._run_supervised_epoch(training=False, epoch=epoch)
             self.test_errors.append(test_error)
 
             # Save the model every 50 epochs
@@ -156,6 +157,7 @@ class Classifier(nn.Module):
     def _save(self, epoch: int = None):
         save_dir = os.path.join(
             "../",
+            "output",
             "models",
             self.classifier_name.lower(),
             "supervised",
@@ -307,7 +309,7 @@ class BioClassifier(Classifier):
             f"Starting Unsupervised Learning Phase for BioClassifier {"slow" if self.slow else "fast"}"
         )
         learning_rate_update = learning_rate / epochs
-        for epoch in tqdm(range(epochs), desc="Unsupervised Learning Epochs:"):
+        for epoch in tqdm(range(epochs), desc="Unsupervised Learning Epochs"):
             for i, (input, _) in enumerate(self.train_data_loader):
                 input = input.to(device)  # ensure data is on the same device
                 input_currents = self._compute_input_currents(input)
