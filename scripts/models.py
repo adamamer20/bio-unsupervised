@@ -98,11 +98,11 @@ class Classifier(nn.Module):
         else:
             raise ValueError("Unsupported dataset")
 
-    def plot_errors(self, classifier_name: str):
+    def plot_errors(self):
         if not self.train_errors or not self.test_errors:
             raise ValueError("No errors to plot. Run training first.")
-        plt.plot(self.train_errors, label=f"{classifier_name} Train Error")
-        plt.plot(self.test_errors, label=f"{classifier_name} Test Error")
+        plt.plot(self.train_errors, label=f"{self.classifier_name} Train Error")
+        plt.plot(self.test_errors, label=f"{self.classifier_name} Test Error")
         plt.xlabel("Epochs")
         plt.ylabel("Error Rate (%)")
         plt.legend()
@@ -192,12 +192,10 @@ class BPClassifier(Classifier):
     def train_and_plot_errors(
         self, learning_rate: float, epochs: int, classifier_name: str
     ):
-        self._train_supervised(
-            learning_rate=learning_rate, epochs=epochs
-        )
+        self._train_supervised(learning_rate=learning_rate, epochs=epochs)
 
 
-# Define the BioClassifier with Slow Implementation
+# Define the BioClassifier
 class BioClassifier(Classifier):
     def __init__(
         self,
@@ -266,7 +264,9 @@ class BioClassifier(Classifier):
         # Define loss and optimizer for supervised phase
         self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
 
-        self.classifier_name = f"{self.__class__.__name__}_{'slow' if self.slow else 'fast'}"
+        self.classifier_name = (
+            f"{self.__class__.__name__}_{'slow' if self.slow else 'fast'}"
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # (batch_size, input_dim) @ (hidden_size, input_dim).T -> (batch_size, hidden_size)
@@ -295,13 +295,11 @@ class BioClassifier(Classifier):
             epochs=supervised_epochs,
         )
         if self.slow:
-            self.plot_errors("bio_slow")
+            self.plot_errors()
         else:
-            self.plot_errors("bio_fast")
+            self.plot_errors()
 
-    def _train_unsupervised(
-        self, learning_rate: float, epochs: int
-    ):
+    def _train_unsupervised(self, learning_rate: float, epochs: int):
         """
         Perform the unsupervised learning phase.
         """
