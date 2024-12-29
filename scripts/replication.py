@@ -10,8 +10,8 @@ from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+from tqdm import tqdm
 
-torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -103,7 +103,7 @@ class Classifier(nn.Module):
         correct = 0
         total = 0
         data_loader = self.train_data_loader if training else self.test_data_loader
-        for data, target in data_loader:
+        for data, target in tqdm(data_loader, desc="Batch:"):
             data, target = data.to(device), target.to(device)
             if training and self.optimizer is not None:
                 self.optimizer.zero_grad()
@@ -125,10 +125,9 @@ class Classifier(nn.Module):
         epochs: int,
         classifier_name: str,
     ):
-        print("Starting Supervised Learning Phase")
+        print(f"Starting Supervised Learning Phase for {classifier_name}")
         self.optimizer = Adam(self.parameters(), lr=learning_rate)
-        for epoch in range(epochs):
-            print(f"Epoch {epoch+1}/{epochs}")
+        for epoch in tqdm(range(epochs), desc="Supervised Epoch:"):
             train_error = self._run_supervised_epoch(training=True)
             self.train_errors.append(train_error)
             test_error = self._run_supervised_epoch(training=False)
@@ -147,6 +146,7 @@ class Classifier(nn.Module):
         torch.save(
             self.state_dict(), os.path.join(save_dir, f"{classifier_name.lower()}.pth")
         )
+        print(f"Model saved to {save_dir}")
 
 
 # Define a traditional single-layer neural network
@@ -269,9 +269,15 @@ class BioClassifier(Classifier):
         Train the supervised top layer and plot error rates.
         """
         self._train_unsupervised(
-            learning_rate=unsupervised_lr, epochs=unsupervised_epochs
+            learning_rate=unsupervised_lr,
+            epochs=unsupervised_epochs,
+            classifier_name=classifier_name,
         )
-        self._train_supervised(learning_rate=supervised_lr, epochs=supervised_epochs)
+        self._train_supervised(
+            learning_rate=supervised_lr,
+            epochs=supervised_epochs,
+            classifier_name=classifier_name,
+        )
         if self.slow:
             self._save("bio_slow")
             self._plot_errors("bio_slow")
@@ -285,11 +291,12 @@ class BioClassifier(Classifier):
         """
         Perform the unsupervised learning phase.
         """
-        print("Starting Unsupervised Learning Phase")
+        print(
+            f"Starting Unsupervised Learning Phase for BioClassifier {"slow" if self.slow else "fast"}"
+        )
         learning_rate_update = learning_rate / epochs
-        for epoch in range(epochs):
-            print(f"Unsupervised Epoch {epoch+1}/{epochs}")
-            for i, (input, _) in enumerate(self.train_data_loader):
+        for epoch in tqdm(range(epochs), desc="Unsupervised Epoch:"):
+            for i, (input, _) in tqdm(enumerate(self.train_data_loader), desc="Batch:"):
                 input_currents = self._compute_input_currents(input)
 
                 # Solve lateral inhibition dynamics to get steady state activations
@@ -306,9 +313,6 @@ class BioClassifier(Classifier):
                 weight_update /= weight_update.max()
 
                 self.unsupervised_weights += learning_rate * weight_update
-
-            print(f"Updated Weights: {self.unsupervised_weights}")
-            print("Epoch completed.\n")
 
             # Save the model every 50 epochs
             if (epoch + 1) % 50 == 0:
@@ -399,41 +403,3 @@ class BioClassifier(Classifier):
         # Average over the batch dimension
         weight_update = weight_update.mean(dim=1)
         return weight_update
-
-
-if __name__ == "__main__":
-    for slow in [False, True]:
-        # Train a bio-inspired classifier with slow or fast implementation
-
-        bio_model = BioClassifier(
-            "MNIST",
-            minibatch_size=100,
-            hidden_size=2000,
-            slow=slow,
-            p=3,
-            delta=0.4,
-            R=1,
-            h_star=0.5,
-            tau_L=1,
-            w_inh=0.1,
-            k=7,
-        )
-        bio_model.train_and_plot_errors(
-            unsupervised_epochs=1000,
-            unsupervised_lr=0.04,
-            supervised_lr=0.001,
-            supervised_epochs=100,
-            classifier_name="bio_slow" if slow else "bio_fast",
-        )
-
-    # Train a traditional neural network
-    bp_model = BPClassifier("MNIST", minibatch_size=64, hidden_size=2000)
-    bp_model.train_and_plot_errors(
-        learning_rate=0.001, epochs=100, classifier_name="BP"
-    )
-
-    os.makedirs("plots", exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join("plots", f"errors_{timestamp}.png")
-    plt.savefig(save_path)
