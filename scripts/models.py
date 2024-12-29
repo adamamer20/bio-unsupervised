@@ -1,7 +1,7 @@
 import os
+import pickle
 from typing import Literal, Optional
 
-import pickle  # Changed from cPickle
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -195,9 +195,7 @@ class BPClassifier(Classifier):
         x = self.softmax(x)
         return x
 
-    def train_and_plot_errors(
-        self, learning_rate: float, epochs: int, classifier_name: str
-    ):
+    def train_and_plot_errors(self, learning_rate: float, epochs: int):
         self._train_supervised(learning_rate=learning_rate, epochs=epochs)
 
 
