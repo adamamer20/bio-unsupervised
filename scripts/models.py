@@ -13,6 +13,7 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.set_default_device(device)
 
 
 class Classifier(nn.Module):
@@ -72,14 +73,21 @@ class Classifier(nn.Module):
             )
 
             train_dataloader = DataLoader(
-                train_dataset, batch_size=minibatch_size, shuffle=True
+                train_dataset,
+                batch_size=minibatch_size,
+                shuffle=True,
+                generator=torch.Generator(device=device),
             )
             test_dataloader = DataLoader(
                 datasets.MNIST(
-                    root="data", download=True, train=False, transform=transform
+                    root="data",
+                    download=True,
+                    train=False,
+                    transform=transform,
                 ),
                 batch_size=minibatch_size,
                 shuffle=True,
+                generator=torch.Generator(device=device),
             )
             return train_dataloader, test_dataloader
         else:
@@ -252,9 +260,11 @@ class BioClassifier(Classifier):
         self.optimizer = Adam(self.supervised_weights.parameters(), lr=0.001)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.unsupervised_weights @ x
+        # (batch_size, input_dim) @ (hidden_size, input_dim).T -> (batch_size, hidden_size)
+        x = x @ self.unsupervised_weights.T
         x = self.relu(x)
         x = self.supervised_weights(x)
+        x = self.softmax(x)
         return x
 
     def train_and_plot_errors(
@@ -297,6 +307,7 @@ class BioClassifier(Classifier):
         learning_rate_update = learning_rate / epochs
         for epoch in tqdm(range(epochs), desc="Unsupervised Epoch:"):
             for i, (input, _) in tqdm(enumerate(self.train_data_loader), desc="Batch:"):
+                input = input.to(device)  # ensure data is on the same device
                 input_currents = self._compute_input_currents(input)
 
                 # Solve lateral inhibition dynamics to get steady state activations
@@ -365,7 +376,7 @@ class BioClassifier(Classifier):
             for i in range(input_currents.shape[1]):
                 # SciPy solution on the same column i
                 solutions.append(scipy_steady_state(input_currents[:, i].numpy()))
-            return torch.tensor(np.array(solutions))
+            return torch.tensor(np.array(solutions), device=device)
         else:
             return input_currents
 
