@@ -69,7 +69,7 @@ class Classifier(nn.Module):
             )
 
             train_dataset = datasets.MNIST(
-                root="data", download=True, train=True, transform=transform
+                root="./data", download=True, train=True, transform=transform
             )
 
             train_dataloader = DataLoader(
@@ -147,18 +147,19 @@ class Classifier(nn.Module):
 
         print("Supervised Learning Phase Complete")
 
-    def _save(self, classifier_name: str):
+    def _save(self, classifier_name: str, epoch: int = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_dir = os.path.join("data", "weights", classifier_name.lower(), timestamp)
-        os.makedirs(save_dir, exist_ok=True)
-        torch.save(
-            self.state_dict(), os.path.join(save_dir, f"{classifier_name.lower()}.pth")
+        save_dir = os.path.join(
+            ".", "data", "models", classifier_name.lower(), f"epoch_{epoch+1}"
         )
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(self.state_dict(), os.path.join(save_dir, f"{timestamp}.pth"))
         print(f"Model saved to {save_dir}")
 
     def load(self, path: str):
         """Load the model weights from the specified path."""
         self.load_state_dict(torch.load(path))
+
 
 # Define a traditional single-layer neural network
 class BPClassifier(Classifier):
@@ -190,7 +191,6 @@ class BPClassifier(Classifier):
         self._train_supervised(
             learning_rate=learning_rate, epochs=epochs, classifier_name=classifier_name
         )
-        self._save("BP")
 
 
 # Define the BioClassifier with Slow Implementation
